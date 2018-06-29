@@ -8,7 +8,19 @@ std::vector<at::Tensor> lstm_cuda_forward(
     at::Tensor hx,
     at::Tensor cx,
     at::Tensor weights,
-    at::Tensor biases);
+    at::Tensor biases,
+    int perfopts);
+
+std::vector<at::Tensor> milstm_cuda_forward(
+    at::Tensor input,
+    at::Tensor hx,
+    at::Tensor cx,
+    at::Tensor weights,
+    at::Tensor biases,
+    at::Tensor alphat,
+    at::Tensor beta1,
+    at::Tensor beta2,
+    int perfopts);
 
 
 // C++ interface
@@ -23,15 +35,38 @@ std::vector<at::Tensor> lstm_forward(
     at::Tensor hx,
     at::Tensor cx,
     at::Tensor weights,
-    at::Tensor biases) {
+    at::Tensor biases,
+    int perfopts) {
   CHECK_INPUT(input);
   CHECK_INPUT(weights);
   CHECK_INPUT(biases);
   CHECK_INPUT(hx);
   CHECK_INPUT(cx);
-  return lstm_cuda_forward(input, hx, cx, weights, biases);
+  return lstm_cuda_forward(input, hx, cx, weights, biases, perfopts);
+}
+
+std::vector<at::Tensor> milstm_forward(
+    at::Tensor input,
+    at::Tensor hx,
+    at::Tensor cx,
+    at::Tensor weights,
+    at::Tensor biases,
+    at::Tensor alphat,
+    at::Tensor beta1,
+    at::Tensor beta2,
+    int perfopts) {
+  CHECK_INPUT(input);
+  CHECK_INPUT(weights);
+  CHECK_INPUT(biases);
+  CHECK_INPUT(hx);
+  CHECK_INPUT(cx);
+  CHECK_INPUT(alphat);
+  CHECK_INPUT(beta1);
+  CHECK_INPUT(beta2);
+  return milstm_cuda_forward(input, hx, cx, weights, biases, alphat, beta1, beta2, perfopts);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("lstm", &lstm_forward, "lstm forward (CUDA)");
+  m.def("milstm", &milstm_forward, "milstm forward (CUDA)");
 }
