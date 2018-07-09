@@ -205,27 +205,49 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             torch.cuda.synchronize()
             gpu_msecs = start_event.elapsed_time(end_event)
             timings.append(gpu_msecs)
-        print("%4.4f msec" % (sum(timings) / len(timings)))
+        return "%4.4f" % (sum(timings) / len(timings))
 
-    print("lstm (autograd)")
-    benchmark(lstmp)
-    print("lstm (manual)")
-    benchmark(lstmo)
-    print("lstm (cudnn)")
-    benchmark(lstmc)
-    print("lstm kernel (base) (incorrect!)")
-    benchmark(lambda: lstmk(0))
-    print("lstm kernel (pointwise)")
-    benchmark(lambda: lstmk(1 | 4))
-    print("lstm kernel (scheduled)")
-    benchmark(lambda: lstmk(31))
-    print("lstm (jit)")
-    benchmark(lstmj)
+    # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
+    # print(benchmark(lstmp, nloops=1, warmup=0))
+    print(benchmark(lstmj, nloops=1, warmup=0))
+    return
+
+    outs = [benchmark(lstmp),
+            benchmark(lstmo),
+            benchmark(lstmc),
+            benchmark(lambda: lstmk(0)),
+            benchmark(lambda: lstmk(1 | 4)),
+            benchmark(lambda: lstmk(31)),
+            benchmark(lstmj)]
+    print(', '.join(outs))
+
+    # print("lstm (autograd)")
+    # print(benchmark(lstmp))
+    # print("lstm (manual)")
+    # print(benchmark(lstmo))
+    # print("lstm (cudnn)")
+    # print(benchmark(lstmc))
+    # print("lstm kernel (base) (incorrect!)")
+    # print(benchmark(lambda: lstmk(0)))
+    # print("lstm kernel (pointwise)")
+    # print(benchmark(lambda: lstmk(1 | 4)))
+    # print("lstm kernel (scheduled)")
+    # print(benchmark(lambda: lstmk(31)))
+    # print("lstm (jit)")
+    # print(benchmark(lstmj))
 
 
-inputs = dict(seqLength=100,
+# for seqLength in range(1, 101, 5):
+#     inputs = dict(seqLength=seqLength,
+#                   numLayers=1,
+#                   hiddenSize=512,
+#                   miniBatch=64)
+#     # test(**inputs)
+#     benchmark(**inputs)
+
+inputs = dict(seqLength=5,
               numLayers=1,
               hiddenSize=512,
               miniBatch=64)
-test(**inputs)
+# test(**inputs)
 benchmark(**inputs)
