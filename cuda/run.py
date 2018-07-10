@@ -198,8 +198,8 @@ traced_fn2t = None
 
 
 def lstm_trace_no_premul_pret(input, hidden, w_ih, w_hh, b_ih, b_hh):
-    w_ih = w_ih.t()
-    w_hh = w_hh.t()
+    w_ih = w_ih.t().contiguous()
+    w_hh = w_hh.t().contiguous()
     transpose = torch.tensor(0)
 
     global traced_fn2t
