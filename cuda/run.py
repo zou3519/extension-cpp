@@ -118,6 +118,34 @@ def lstm_jit(input, hidden, w_ih, w_hh, b_ih, b_hh, jit=True):
     return output, (hx.view(1, *hx.size()), cx.view(1, *cx.size()))
 
 
+def lstm_raw(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
+    cell_fn = lstm_cell
+    seq_len, batch_size, input_size = input.size()
+    # pre-multiply the inputs
+    input_ = F.linear(input.view(-1, input_size), w_ih, b_ih).view(seq_len,
+                                                                   batch_size,
+                                                                   -1)
+    output = []
+    for i in range(0, input.size(0)):
+        hx, cx = cell_fn(input_[i], hx, cx, w_hh, b_hh)
+        output.append(hx)
+    output = torch.cat(output, 0).view(input_.size(0), *output[0].size())
+    return output, hx.view(1, *hx.size()), cx.view(1, *cx.size())
+
+
+traced_fn = None
+
+
+def lstm_trace(input, hidden, w_ih, w_hh, b_ih, b_hh):
+    global traced_fn
+    if traced_fn is None:
+        traced_fn = torch.jit.trace(input, hidden[0][0], hidden[1][0], w_ih,
+                                    w_hh, b_ih, b_hh)(lstm_raw)
+    y, hy, cy = traced_fn(input, hidden[0][0], hidden[1][0],
+                          w_ih, w_hh, b_ih, b_hh)
+    return y, (hy, cy)
+
+
 def barf():
     import pdb
     pdb.set_trace()
@@ -140,23 +168,27 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     w, b = flatten_weights(lstm.all_weights)
 
     expected = lstm(x, (hx, cx))
-    print("Test lstm kernel (pointwise)...")
-    # NB: 4 by itself is broken; requires 1
-    kernel_result = lstm_kernel(x, hx, cx, w, b, 1 | 4)
-    check_output(kernel_result, expected)
+    # print("Test lstm kernel (pointwise)...")
+    # # NB: 4 by itself is broken; requires 1
+    # kernel_result = lstm_kernel(x, hx, cx, w, b, 1 | 4)
+    # check_output(kernel_result, expected)
 
     # This is just not correct...
     # print("Test lstm kernel (base)...")
     # kernel_result = lstm_kernel(x, hx, cx, w, b, 0)
     # check_output(kernel_result, expected)
 
-    print("Test lstm kernel (all opts)...")
-    kernel_result = lstm_kernel(x, hx, cx, w, b, 31)
-    check_output(kernel_result, expected)
+    # print("Test lstm kernel (all opts)...")
+    # kernel_result = lstm_kernel(x, hx, cx, w, b, 31)
+    # check_output(kernel_result, expected)
 
-    print("Test lstm jit...")
-    jit_result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
-    check_output(jit_result, expected)
+    # print("Test lstm jit...")
+    # jit_result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
+    # check_output(jit_result, expected)
+
+    print("Test lstm trace...")
+    trace_result = lstm_trace(x, (hx, cx), *lstm.all_weights[0])
+    check_output(trace_result, expected)
 
 
 def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
@@ -192,6 +224,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         result = lstm_jit(x, (hx, cx), *lstm.all_weights[0], jit=False)
         return result
 
+    def lstmt():
+        return lstm_trace(x, (hx, cx), *lstm.all_weights[0])
+
     def benchmark(fn, nloops=100, warmup=2):
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
@@ -209,7 +244,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
     # print(benchmark(lstmp, nloops=1, warmup=0))
-    print(benchmark(lstmj, nloops=1, warmup=0))
+    # print(benchmark(lstmj, nloops=1, warmup=0))
+    print(benchmark(lstmt, nloops=1, warmup=1))
     return
 
     outs = [benchmark(lstmp),
@@ -218,7 +254,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             benchmark(lambda: lstmk(0)),
             benchmark(lambda: lstmk(1 | 4)),
             benchmark(lambda: lstmk(31)),
-            benchmark(lstmj)]
+            benchmark(lstmj),
+            benchmark(lstmt)]
     print(', '.join(outs))
 
     # print("lstm (autograd)")
@@ -237,17 +274,17 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # print(benchmark(lstmj))
 
 
-# for seqLength in range(1, 101, 5):
-#     inputs = dict(seqLength=seqLength,
+# for hiddenSize in range(128, 4096, 256):
+#     inputs = dict(seqLength=512,
 #                   numLayers=1,
-#                   hiddenSize=512,
+#                   hiddenSize=hiddenSize,
 #                   miniBatch=64)
 #     # test(**inputs)
 #     benchmark(**inputs)
 
 inputs = dict(seqLength=5,
               numLayers=1,
-              hiddenSize=512,
+              hiddenSize=512*8,
               miniBatch=64)
 # test(**inputs)
 benchmark(**inputs)
