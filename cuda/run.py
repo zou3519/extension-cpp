@@ -204,6 +204,7 @@ def lstm_trace_no_premul_pret(input, hidden, w_ih, w_hh, b_ih, b_hh):
 
     global traced_fn2t
     if traced_fn2t is None:
+        # print("tracing")
         args = [input, hidden[0][0], hidden[1][0], w_ih, w_hh, b_ih, b_hh,
                 transpose]
         traced_fn2t = torch.jit.trace(*args)(lstm_raw_no_premul)
@@ -314,12 +315,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         timings = []
         for i in range(warmup):
             fn()
-        # for i in range(nloops):
-        #     with torch.autograd.profiler.profile() as prof:
-        #         fn()
-        #         torch.cuda.synchronize()
-        #     print(prof)
-        #     import pdb; pdb.set_trace()
+            torch.cuda.synchronize()
+
         for i in range(nloops):
             start_event.record()
             fn()
@@ -333,19 +330,22 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # print(benchmark(lstmp, nloops=1, warmup=0))
     # print(benchmark(lstmj, nloops=1, warmup=0))
     # print(benchmark(lstmt, nloops=1, warmup=1))
+    # with torch.autograd.profiler.profile(use_cuda=True) as prof:
     print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=1))
+    # print(prof)
+    # import pdb; pdb.set_trace()
     return
 
     outs = [
-        # benchmark(lstmp),
+        benchmark(lstmp),
         # benchmark(lstmo),
         benchmark(lstmc),
         # benchmark(lambda: lstmk(0)),
         benchmark(lambda: lstmk(1 | 4)),
         # benchmark(lambda: lstmk(31)),
-        # benchmark(lstmj),
+        benchmark(lstmj),
         # benchmark(lstmt),
-        benchmark(lambda: lstmtnp(False)),
+        # benchmark(lambda: lstmtnp(False)),
         benchmark(lambda: lstmtnp(True))
     ]
     print(', '.join(outs))
@@ -374,7 +374,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 #     # test(**inputs)
 #     benchmark(**inputs)
 
-inputs = dict(seqLength=1,
+inputs = dict(seqLength=5,
               numLayers=1,
               hiddenSize=512,
               miniBatch=64)
