@@ -318,6 +318,12 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             fn()
             torch.cuda.synchronize()
 
+        # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+        #     fn()
+        #     torch.cuda.synchronize()
+        # print(prof)
+        # import pdb; pdb.set_trace()
+
         for i in range(nloops):
             time.sleep(3)
             start_event.record()
@@ -331,9 +337,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
     # print(benchmark(lstmp, nloops=1, warmup=0))
     # print(benchmark(lstmj, nloops=1, warmup=0))
-    # print(benchmark(lstmt, nloops=1, warmup=1))
+    print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
-    print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
+    # print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
     # print(prof)
     # import pdb; pdb.set_trace()
     return
