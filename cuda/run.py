@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import functional as F
+import time
 
 import lltm_cuda
 
@@ -318,6 +319,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             torch.cuda.synchronize()
 
         for i in range(nloops):
+            time.sleep(3)
             start_event.record()
             fn()
             end_event.record()
@@ -331,7 +333,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # print(benchmark(lstmj, nloops=1, warmup=0))
     # print(benchmark(lstmt, nloops=1, warmup=1))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
-    print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=1))
+    print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
     # print(prof)
     # import pdb; pdb.set_trace()
     return
