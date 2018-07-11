@@ -137,7 +137,7 @@ def lstm_cell_no_premul(x, hx, cx, w_ih, w_hh, b_ih, b_hh, transpose):
     if transpose:
         gates = x.mm(w_ih.t()) + hx.mm(w_hh.t()) + b_ih + b_hh
     else:
-        gates = torch.addmm(b_ih, x, w_ih) + torch.addmm(b_hh, hx, w_hh)
+        gates = torch.mm(x, w_ih) + torch.mm(hx, w_hh) + b_ih + b_hh
 
     ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
 
@@ -370,7 +370,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
 inputs = dict(seqLength=5,
               numLayers=1,
-              hiddenSize=51,
+              hiddenSize=512,
               miniBatch=64)
 # test(**inputs)
 benchmark(**inputs)
