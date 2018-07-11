@@ -314,6 +314,12 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         timings = []
         for i in range(warmup):
             fn()
+        # for i in range(nloops):
+        #     with torch.autograd.profiler.profile() as prof:
+        #         fn()
+        #         torch.cuda.synchronize()
+        #     print(prof)
+        #     import pdb; pdb.set_trace()
         for i in range(nloops):
             start_event.record()
             fn()
@@ -368,7 +374,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 #     # test(**inputs)
 #     benchmark(**inputs)
 
-inputs = dict(seqLength=5,
+inputs = dict(seqLength=1,
               numLayers=1,
               hiddenSize=512,
               miniBatch=64)
