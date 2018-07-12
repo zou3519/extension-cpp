@@ -33,6 +33,33 @@ def lstm_kernel(x, hx, cx, w, b, perfopts=31):
     return y, (hy, cy)
 
 
+def lstm_kernel_pyloop(input, hx, cx, w, b):
+    seq_len, batch_size, input_size = input.size()
+    hy = hx
+    cy = cx
+    output = []
+    x_ = torch.empty(seq_len, 2, batch_size, input_size, device='cuda')
+    hx_ = torch.empty(seq_len + 1, 1, *hy.size()[1:], device='cuda')
+    cx_ = torch.empty(seq_len + 1, 1, *cy.size()[1:], device='cuda')
+
+    x_.narrow(1, 0, 1).copy_(input.unsqueeze(1))
+    hx_.narrow(0, 0, 1).copy_(hy[0].unsqueeze(0))
+    cx_.narrow(0, 0, 1).copy_(cy[0].unsqueeze(0))
+
+    for i in range(0, seq_len):
+        result = lltm_cuda.lstm(x_[i],
+                                hx_.narrow(0, i, 2),
+                                cx_.narrow(0, i, 2), w, b, 1 | 4)
+        hy = result[1][-1, :, :]
+        cy = result[2][-1, :, :]
+        output.append(hy.clone())
+
+    output = torch.cat(output, 0).view(input.size(0), *output[0].size())
+    return output, (hy.view(1, *hy.size()), cy.view(1, *cy.size()))
+    # output = torch.cat(output, 0)
+    # return output, (hy.unsqueeze(0), cy.unsqueeze(0))
+
+
 def flatten_weights(all_weights):
     numLayers = len(all_weights)
     whh = all_weights[0][1]
@@ -80,6 +107,17 @@ def lstm_block(input_, hx, cx, w_hh, b_hh, jit=True):
         hx, cx = cell_fn(input_[i], hx, cx, w_hh, b_hh)
         output.append(hx)
     return output, cx
+
+
+def lstm_aten(input, hidden, w_ih, w_hh, b_ih, b_hh):
+    assert input.size(0) == 5
+    w_ih = w_ih.t().contiguous()
+    w_hh = w_hh.t().contiguous()
+    hx, cx = hidden
+    hx = hx[0]
+    cx = cx[0]
+    y, hy, cy = torch.lstm_aten(input, hx, cx, w_ih, w_hh, b_ih, b_hh)
+    return y, (hy, cy)
 
 
 def lstm_jit(input, hidden, w_ih, w_hh, b_ih, b_hh, jit=True):
@@ -239,10 +277,16 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     w, b = flatten_weights(lstm.all_weights)
 
     expected = lstm(x, (hx, cx))
-    # print("Test lstm kernel (pointwise)...")
-    # # NB: 4 by itself is broken; requires 1
-    # kernel_result = lstm_kernel(x, hx, cx, w, b, 1 | 4)
-    # check_output(kernel_result, expected)
+
+    print("Test lstm kernel (pointwise)...")
+    # NB: 4 by itself is broken; requires 1
+    kernel_result = lstm_kernel(x, hx, cx, w, b, 1 | 4)
+    check_output(kernel_result, expected)
+
+    # print("Test lstm kernel (pointwise)(pyloop)...")
+    # # NB: 4 by itself is broken; requires 1 NOT CORRECT YET
+    # looped_result = lstm_kernel_pyloop(x, hx, cx, w, b)
+    # check_output(looped_result , expected)
 
     # This is just not correct...
     # print("Test lstm kernel (base)...")
@@ -268,6 +312,10 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     trace_np_result2 = lstm_trace_no_premul(x, (hx, cx), *lstm.all_weights[0])
     check_output(trace_np_result2, expected)
 
+    # print("Test lstm aten...")
+    # at_result = lstm_aten(x, (hx, cx), *lstm.all_weights[0])
+    # check_output(at_result, expected)
+
 
 def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     x = torch.randn(seqLength, miniBatch, hiddenSize, device='cuda')
@@ -283,6 +331,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     def lstmk(perfopts=1 | 2 | 4 | 8 | 16):
         result = lstm_kernel(x, hx, cx, w, b, perfopts)
         return result
+
+    def lstmkl(perfopts=1 | 4):
+        return lstm_kernel_pyloop(x, hx, cx, w, b)
 
     def lstmc():
         result = lstm(x, (hx, cx))
@@ -305,6 +356,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     def lstmt():
         return lstm_trace(x, (hx, cx), *lstm.all_weights[0])
 
+    def lstma():
+        return lstm_aten(x, (hx, cx), *lstm.all_weights[0])
+
     def lstmtnp(pretranspose=False):
         if pretranspose:
             return lstm_trace_no_premul_pret(x, (hx, cx), *lstm.all_weights[0])
@@ -325,7 +379,6 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         # import pdb; pdb.set_trace()
 
         for i in range(nloops):
-            time.sleep(3)
             start_event.record()
             fn()
             end_event.record()
@@ -335,9 +388,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         return "%4.4f" % (sum(timings) / len(timings))
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
-    # print(benchmark(lstmp, nloops=1, warmup=0))
+    print(benchmark(lstmp, nloops=1, warmup=0))
     # print(benchmark(lstmj, nloops=1, warmup=0))
-    print(benchmark(lstmt, nloops=1, warmup=2))
+    # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
     # print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
     # print(prof)
@@ -350,11 +403,13 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         benchmark(lstmc),
         # benchmark(lambda: lstmk(0)),
         benchmark(lambda: lstmk(1 | 4)),
+        benchmark(lstmkl),
         # benchmark(lambda: lstmk(31)),
         benchmark(lstmj),
         # benchmark(lstmt),
         # benchmark(lambda: lstmtnp(False)),
-        benchmark(lambda: lstmtnp(True))
+        benchmark(lambda: lstmtnp(True)),
+        # benchmark(lstma, nloops=50),
     ]
     print(', '.join(outs))
 
@@ -382,7 +437,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 #     # test(**inputs)
 #     benchmark(**inputs)
 
-inputs = dict(seqLength=5,
+inputs = dict(seqLength=20,
               numLayers=1,
               hiddenSize=512,
               miniBatch=64)
