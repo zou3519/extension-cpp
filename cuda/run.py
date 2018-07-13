@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import functional as F
 import time
+from torch.nn._functions.rnn import fusedBackend
 
 import lltm_cuda
 
@@ -73,6 +74,35 @@ def flatten_weights(all_weights):
         b[layer][0].copy_(b_ih)
         b[layer][1].copy_(b_hh)
     return w.view(-1), b.view(-1)
+
+
+def lstm_fused(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
+    output = []
+
+    def lstm_fused_cell(input, hx, cx, w_ih_t, w_hh_t,
+                        b_ih, b_hh, igates, hgates):
+        torch.mm(input, w_ih_t, out=igates)
+        torch.mm(hx.detach(), w_hh_t, out=hgates)
+        state = fusedBackend.LSTMFused.apply
+        return state(igates, hgates, cx, b_ih, b_hh)
+
+    seq_len = input.size(0)
+    hy = hx[0]
+    cy = cx[0]
+
+    w_ih_t = w_ih.t().contiguous().detach()
+    w_hh_t = w_hh.t().contiguous().detach()
+    batch_size = input.size(1)
+    igates = torch.empty(seq_len, batch_size, batch_size, device='cuda')
+    hgates = torch.empty(seq_len, batch_size, batch_size, device='cuda')
+
+    for i in range(seq_len):
+        hy, cy = lstm_fused_cell(input[i], hy, cy, w_ih_t, w_hh_t,
+                                 b_ih, b_hh, igates[i], hgates[i])
+        output.append(hy)
+
+    output = torch.cat(output, 0).view(seq_len, *output[0].size())
+    return output, (hy.unsqueeze(0), cy.unsqueeze(0))
 
 
 # run one step of an lstm, assuming premultiplied input
@@ -301,6 +331,10 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # jit_result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
     # check_output(jit_result, expected)
 
+    print("Test lstm (mm opt)...")
+    fused_result = lstm_fused(x, hx, cx, *lstm.all_weights[0])
+    check_output(fused_result, expected)
+
     print("Test lstm trace...")
     trace_result = lstm_trace(x, (hx, cx), *lstm.all_weights[0])
     check_output(trace_result, expected)
@@ -345,6 +379,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         torch.backends.cudnn.enabled = True
         return result
 
+    def lstmf():
+        return lstm_fused(x, hx, cx, *lstm.all_weights[0])
+
     def lstmj():
         result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
         return result
@@ -388,7 +425,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         return "%4.4f" % (sum(timings) / len(timings))
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
-    print(benchmark(lstmp, nloops=1, warmup=0))
+    print(benchmark(lstmf, nloops=1, warmup=0))
     # print(benchmark(lstmj, nloops=1, warmup=0))
     # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
@@ -399,16 +436,17 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
     outs = [
         benchmark(lstmp),
+        benchmark(lstmf),
         # benchmark(lstmo),
         benchmark(lstmc),
         # benchmark(lambda: lstmk(0)),
-        benchmark(lambda: lstmk(1 | 4)),
-        benchmark(lstmkl),
+        # benchmark(lambda: lstmk(1 | 4)),
+        # benchmark(lstmkl),
         # benchmark(lambda: lstmk(31)),
-        benchmark(lstmj),
+        # benchmark(lstmj),
         # benchmark(lstmt),
         # benchmark(lambda: lstmtnp(False)),
-        benchmark(lambda: lstmtnp(True)),
+        # benchmark(lambda: lstmtnp(True)),
         # benchmark(lstma, nloops=50),
     ]
     print(', '.join(outs))
