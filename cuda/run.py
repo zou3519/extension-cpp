@@ -81,20 +81,26 @@ def lstm_fused(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
 
     def lstm_fused_cell(input, hx, cx, w_ih_t, w_hh_t,
                         b_ih, b_hh, igates, hgates):
+        # print("First mm")
+        # import pdb; pdb.set_trace()
         torch.mm(input, w_ih_t, out=igates)
+        # print("Second mm")
         torch.mm(hx.detach(), w_hh_t, out=hgates)
         state = fusedBackend.LSTMFused.apply
         return state(igates, hgates, cx, b_ih, b_hh)
 
     seq_len = input.size(0)
+    hidden_size = input.size(2)  # input_size = hidden_size for now
     hy = hx[0]
     cy = cx[0]
 
     w_ih_t = w_ih.t().contiguous().detach()
     w_hh_t = w_hh.t().contiguous().detach()
     batch_size = input.size(1)
-    igates = torch.empty(seq_len, batch_size, batch_size, device='cuda')
-    hgates = torch.empty(seq_len, batch_size, batch_size, device='cuda')
+    igates = torch.empty(seq_len, batch_size, 4 * hidden_size, device='cuda')
+    hgates = torch.empty(seq_len, batch_size, 4 * hidden_size, device='cuda')
+    # igates = torch.empty(seq_len, 4 * hidden_size, batch_size,  device='cuda').transpose(1, 2)
+    # hgates = torch.empty(seq_len, 4 * hidden_size, batch_size, device='cuda').transpose(1, 2).transpose(1, 2).transpose(1, 2).transpose(1, 2)
 
     for i in range(seq_len):
         hy, cy = lstm_fused_cell(input[i], hy, cy, w_ih_t, w_hh_t,
@@ -401,7 +407,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             return lstm_trace_no_premul_pret(x, (hx, cx), *lstm.all_weights[0])
         return lstm_trace_no_premul(x, (hx, cx), *lstm.all_weights[0])
 
-    def benchmark(fn, nloops=100, warmup=10):
+    def benchmark(fn, nloops=500, warmup=10):
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         timings = []
@@ -409,12 +415,14 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             fn()
             torch.cuda.synchronize()
 
-        with torch.autograd.profiler.profile(use_cuda=False) as prof:
-            fn()
-            torch.cuda.synchronize()
-        print(prof)
-        import pdb; pdb.set_trace()
-        return "0"
+        # with torch.autograd.profiler.profile(use_cuda=False) as prof:
+        #     fn()
+        #     torch.cuda.synchronize()
+        # print(prof)
+        # import pdb; pdb.set_trace()
+        # return "0"
+
+        time.sleep(1)
 
         for i in range(nloops):
             start_event.record()
@@ -426,8 +434,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         return "%4.4f" % (sum(timings) / len(timings))
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
-    print(benchmark(lstmp, nloops=1, warmup=10))
-    print(benchmark(lstmf, nloops=1, warmup=10))
+    # print(benchmark(lstmp, nloops=1, warmup=10))
+    print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmj, nloops=1, warmup=0))
     # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
@@ -477,7 +485,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 #     # test(**inputs)
 #     benchmark(**inputs)
 
-inputs = dict(seqLength=5,
+inputs = dict(seqLength=10,
               numLayers=1,
               hiddenSize=512,
               miniBatch=64)

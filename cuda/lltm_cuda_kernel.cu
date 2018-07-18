@@ -286,10 +286,6 @@ std::vector<at::Tensor> lstm_cuda_forward(
   int numLayers = hx.size(0);
   int hiddenSize = input.size(-1);
   int miniBatch = input.size(-2);
-  // int seqLength = 100;
-  // int numLayers = 4;
-  // int hiddenSize = 512;
-  // int miniBatch = 64;
   bool checkF = true;
 
    float *h_data;
@@ -344,11 +340,6 @@ std::vector<at::Tensor> lstm_cuda_forward(
    // Input/output data
    int numElements = hiddenSize * miniBatch;
 
-   // auto i     = at::zeros({ (seqLength) * (numLayers + 1) * numElements }, at::kCUDA);
-   // auto h     = at::zeros({ (seqLength + 1) * (numLayers) * numElements }, at::kCUDA);
-   // auto c     = at::zeros({ (seqLength + 1) * (numLayers) * numElements }, at::kCUDA);
-   // auto bias_ = at::zeros({ numLayers * hiddenSize * 8 }, at::kCUDA);
-   // auto T_    = at::zeros({ numLayers * hiddenSize * hiddenSize * 8 }, at::kCUDA);
    auto i = input;
    auto h = hx;
    auto c = cx;
