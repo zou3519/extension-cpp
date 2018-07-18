@@ -75,6 +75,9 @@ def flatten_weights(all_weights):
         b[layer][1].copy_(b_hh)
     return w.view(-1), b.view(-1)
 
+def lstm_fused2(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
+    y, hy, cy = torch.lstm_fusion(input, hx, cx, w_ih, w_hh, b_ih, b_hh)
+    return y, (hy, cy)
 
 def lstm_fused(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
     output = []
@@ -287,7 +290,6 @@ def lstm_trace_no_premul_pret(input, hidden, w_ih, w_hh, b_ih, b_hh):
                             w_ih, w_hh, b_ih, b_hh, transpose)
     # args = [input, hidden[0][0], hidden[1][0], w_ih, w_hh, b_ih, b_hh]
     # graph = traced_fn2t.graph_for(*args)
-    # import pdb; pdb.set_trace()
     return y, (hy, cy)
 
 
@@ -341,6 +343,10 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     fused_result = lstm_fused(x, hx, cx, *lstm.all_weights[0])
     check_output(fused_result, expected)
 
+    print("Test lstm (fused_cuda_aten)...")
+    fused2_result = lstm_fused2(x, hx, cx, *lstm.all_weights[0])
+    check_output(fused2_result, expected)
+
     print("Test lstm trace...")
     trace_result = lstm_trace(x, (hx, cx), *lstm.all_weights[0])
     check_output(trace_result, expected)
@@ -388,6 +394,10 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     def lstmf():
         return lstm_fused(x, hx, cx, *lstm.all_weights[0])
 
+    def lstmf2():
+        return lstm_fused2
+    (x, hx, cx, *lstm.all_weights[0])
+
     def lstmj():
         result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
         return result
@@ -407,7 +417,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             return lstm_trace_no_premul_pret(x, (hx, cx), *lstm.all_weights[0])
         return lstm_trace_no_premul(x, (hx, cx), *lstm.all_weights[0])
 
-    def benchmark(fn, nloops=500, warmup=10):
+    def benchmark(fn, nloops=200, warmup=10):
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         timings = []
@@ -422,8 +432,6 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         # import pdb; pdb.set_trace()
         # return "0"
 
-        time.sleep(1)
-
         for i in range(nloops):
             start_event.record()
             fn()
@@ -435,18 +443,21 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
     # print(benchmark(lstmp, nloops=1, warmup=10))
-    print(benchmark(lstmf, nloops=1, warmup=3))
+    # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmj, nloops=1, warmup=0))
     # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
     # print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
     # print(prof)
     # import pdb; pdb.set_trace()
+    # print(benchmark(lstmf, nloops=1, warmup=3))
+    print(benchmark(lstmf2, nloops=1, warmup=3))
     return
 
     outs = [
         benchmark(lstmp),
         benchmark(lstmf),
+        benchmark(lstmf2),
         # benchmark(lstmo),
         benchmark(lstmc),
         # benchmark(lambda: lstmk(0)),
