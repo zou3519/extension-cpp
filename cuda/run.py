@@ -395,8 +395,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         return lstm_fused(x, hx, cx, *lstm.all_weights[0])
 
     def lstmf2():
-        return lstm_fused2
-    (x, hx, cx, *lstm.all_weights[0])
+        return lstm_fused2(x, hx, cx, *lstm.all_weights[0])
 
     def lstmj():
         result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
@@ -496,7 +495,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 #     # test(**inputs)
 #     benchmark(**inputs)
 
-inputs = dict(seqLength=10,
+inputs = dict(seqLength=100,
               numLayers=1,
               hiddenSize=512,
               miniBatch=64)
