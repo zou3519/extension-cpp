@@ -75,8 +75,13 @@ def flatten_weights(all_weights):
         b[layer][1].copy_(b_hh)
     return w.view(-1), b.view(-1)
 
-def lstm_fused2(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
-    y, hy, cy = torch.lstm_fusion(input, hx, cx, w_ih, w_hh, b_ih, b_hh)
+def lstm_fused2(input, hx, cx, w_ih, w_hh, b_ih, b_hh, choice=0):
+    y, hy, cy = torch.lstm_fusion(input, hx, cx, w_ih, w_hh, b_ih, b_hh, choice)
+    return y, (hy, cy)
+
+def lstm_native(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
+    y, hy, cy = torch.lstm_native(input, hx, cx,
+                                  w_ih, w_hh, b_ih, b_hh)
     return y, (hy, cy)
 
 def lstm_fused(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
@@ -394,8 +399,12 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     def lstmf():
         return lstm_fused(x, hx, cx, *lstm.all_weights[0])
 
-    def lstmf2():
-        return lstm_fused2(x, hx, cx, *lstm.all_weights[0])
+    def lstmf2(option=0):
+        kwargs = dict(choice=option)
+        return lstm_fused2(x, hx, cx, *lstm.all_weights[0], **kwargs)
+
+    def lstmn():
+        return lstm_native(x, hx, cx, *lstm.all_weights[0])
 
     def lstmj():
         result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
@@ -442,6 +451,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
     # print(benchmark(lstmp, nloops=1, warmup=10))
+    print(benchmark(lstmn, nloops=1, warmup=0))
+    print(benchmark(lambda: lstmf2(1), nloops=1, warmup=0))
     # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmj, nloops=1, warmup=0))
     # print(benchmark(lstmt, nloops=1, warmup=2))
@@ -450,17 +461,19 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # print(prof)
     # import pdb; pdb.set_trace()
     # print(benchmark(lstmf, nloops=1, warmup=3))
-    print(benchmark(lstmf2, nloops=1, warmup=3))
+    # print(benchmark(lstmf2, nloops=1, warmup=3))
     return
 
     outs = [
         benchmark(lstmp),
         benchmark(lstmf),
         benchmark(lstmf2),
+        benchmark(lambda: lstmf2(1)),
+        benchmark(lstmn),
         # benchmark(lstmo),
         benchmark(lstmc),
         # benchmark(lambda: lstmk(0)),
-        benchmark(lambda: lstmk(1 | 4)),
+        # benchmark(lambda: lstmk(1 | 4)),
         # benchmark(lstmkl),
         # benchmark(lambda: lstmk(31)),
         # benchmark(lstmj),
