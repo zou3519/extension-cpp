@@ -79,9 +79,9 @@ def lstm_fused2(input, hx, cx, w_ih, w_hh, b_ih, b_hh, choice=0):
     y, hy, cy = torch.lstm_fusion(input, hx, cx, w_ih, w_hh, b_ih, b_hh, choice)
     return y, (hy, cy)
 
-def lstm_native(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
+def lstm_native(input, hx, cx, w_ih, w_hh, b_ih, b_hh, choice=0):
     y, hy, cy = torch.lstm_native(input, hx, cx,
-                                  w_ih, w_hh, b_ih, b_hh)
+                                  w_ih, w_hh, b_ih, b_hh, choice)
     return y, (hy, cy)
 
 def lstm_fused(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
@@ -241,7 +241,7 @@ def lstm_basic(input, hiddens, w_ih, w_hh, b_ih, b_hh):
         # inputs = [input[i], hy, cy, w_ih, w_hh, b_ih, b_hh]
         hy, cy = lstm_cell_basic(input[i], hy, cy, w_ih, w_hh,
                                  b_ih, b_hh)
-        # import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         output.append(hy)
     return torch.stack(output), (hy.unsqueeze(0), cy.unsqueeze(0))
 
@@ -376,17 +376,25 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # jit_result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
     # check_output(jit_result, expected)
 
-    print("Test lstm (mm opt)...")
-    fused_result = lstm_fused(x, hx, cx, *lstm.all_weights[0])
-    check_output(fused_result, expected)
+    # print("Test lstm (mm opt)...")
+    # fused_result = lstm_fused(x, hx, cx, *lstm.all_weights[0])
+    # check_output(fused_result, expected)
 
-    print("Test lstm (fused_cuda_aten)...")
-    fused2_result = lstm_fused2(x, hx, cx, *lstm.all_weights[0])
-    check_output(fused2_result, expected)
+    # print("Test lstm (fused_cuda_aten)...")
+    # fused2_result = lstm_fused2(x, hx, cx, *lstm.all_weights[0])
+    # check_output(fused2_result, expected)
 
-    print("Test lstm trace...")
-    trace_result = lstm_trace(x, (hx, cx), *lstm.all_weights[0])
-    check_output(trace_result, expected)
+    # print("Test lstm trace...")
+    # trace_result = lstm_trace(x, (hx, cx), *lstm.all_weights[0])
+    # check_output(trace_result, expected)
+
+    print("Test lstm native(0)...")
+    native0 = lstm_native(x, hx, cx, *lstm.all_weights[0], choice=0)
+    check_output(native0, expected)
+
+    print("Test lstm native(1)...")
+    native1 = lstm_native(x, hx, cx, *lstm.all_weights[0], choice=1)
+    check_output(native1, expected)
 
     print("Test lstm jit basic...")
     basic_result = lstm_basic(x, (hx, cx), *lstm.all_weights[0])
@@ -442,8 +450,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         kwargs = dict(choice=option)
         return lstm_fused2(x, hx, cx, *lstm.all_weights[0], **kwargs)
 
-    def lstmn():
-        return lstm_native(x, hx, cx, *lstm.all_weights[0])
+    def lstmn(choice=0):
+        return lstm_native(x, hx, cx, *lstm.all_weights[0], choice=choice)
 
     def lstmj():
         result = lstm_jit(x, (hx, cx), *lstm.all_weights[0])
@@ -492,12 +500,17 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # print(benchmark(lstmp, nloops=1, warmup=1))
     # time.sleep(1)
     # print(benchmark(lstmn, nloops=1, warmup=0))
-    print(benchmark(lambda: lstmf2(1), nloops=1, warmup=2))
+    # print(benchmark(lambda: lstmf2(1), nloops=1, warmup=2))
+    # time.sleep(1)
+    # # print(benchmark(lstmf, nloops=1, warmup=3))
+    # print(benchmark(lstmb, nloops=1, warmup=2))
+    # time.sleep(1)
+    print(benchmark(lstmn, nloops=1, warmup=2))
     time.sleep(1)
-    # print(benchmark(lstmf, nloops=1, warmup=3))
+    print(benchmark(lambda: lstmn(1), nloops=1, warmup=2))
+    time.sleep(1)
     print(benchmark(lstmb, nloops=1, warmup=2))
     time.sleep(1)
-    print(benchmark(lstmn, nloops=1, warmup=2))
     return
     # print(benchmark(lstmj, nloops=1, warmup=1))
     # print(benchmark(lstmt, nloops=1, warmup=2))
@@ -515,6 +528,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         # benchmark(lstmf2),
         benchmark(lambda: lstmf2(1)),
         benchmark(lstmn),
+        benchmark(lambda: lstmn(1)),
         # benchmark(lstmo),
         benchmark(lstmc),
         benchmark(lstmb),
@@ -522,10 +536,10 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         # benchmark(lambda: lstmk(1 | 4)),
         # benchmark(lstmkl),
         # benchmark(lambda: lstmk(31)),
-        benchmark(lstmj),
-        benchmark(lstmt),
+        # benchmark(lstmj),
+        # benchmark(lstmt),
         # benchmark(lambda: lstmtnp(False)),
-        benchmark(lambda: lstmtnp(True)),
+        # benchmark(lambda: lstmtnp(True)),
         # benchmark(lstma, nloops=50),
     ]
     print(', '.join(outs))
