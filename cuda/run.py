@@ -216,6 +216,36 @@ def lstm_raw(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
     return output, hx.view(1, *hx.size()), cx.view(1, *cx.size())
 
 
+@torch.jit.script
+def lstm_cell_basic(x, hx, cx, w_ih, w_hh, b_ih, b_hh):
+    gates = x.mm(w_ih.t()) + hx.mm(w_hh.t()) + b_ih + b_hh
+
+    ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+    ingate = F.sigmoid(ingate)
+    forgetgate = F.sigmoid(forgetgate)
+    cellgate = F.tanh(cellgate)
+    outgate = F.sigmoid(outgate)
+    cy = (forgetgate * cx) + (ingate * cellgate)
+    hy = outgate * F.tanh(cy)
+
+    return hy, cy
+
+
+def lstm_basic(input, hiddens, w_ih, w_hh, b_ih, b_hh):
+    seq_len, batch_size, input_size = input.size()
+    output = []
+    hy = hiddens[0][0]
+    cy = hiddens[1][0]
+    for i in range(0, input.size(0)):
+        # inputs = [input[i], hy, cy, w_ih, w_hh, b_ih, b_hh]
+        hy, cy = lstm_cell_basic(input[i], hy, cy, w_ih, w_hh,
+                                 b_ih, b_hh)
+        # import pdb; pdb.set_trace()
+        output.append(hy)
+    return torch.stack(output), (hy.unsqueeze(0), cy.unsqueeze(0))
+
+
 def lstm_cell_no_premul(x, hx, cx, w_ih, w_hh, b_ih, b_hh, transpose):
     if transpose:
         gates = x.mm(w_ih.t()) + hx.mm(w_hh.t()) + b_ih + b_hh
@@ -271,6 +301,7 @@ def lstm_trace_no_premul(input, hidden, w_ih, w_hh, b_ih, b_hh):
         traced_fn2 = torch.jit.trace(*args)(lstm_raw_no_premul)
     y, hy, cy = traced_fn2(input, hidden[0][0], hidden[1][0],
                            w_ih, w_hh, b_ih, b_hh, transpose)
+
     # args = [input, hidden[0][0], hidden[1][0], w_ih, w_hh, b_ih, b_hh]
     # graph = traced_fn2.graph_for(*args)
     # import pdb; pdb.set_trace()
@@ -293,6 +324,7 @@ def lstm_trace_no_premul_pret(input, hidden, w_ih, w_hh, b_ih, b_hh):
         traced_fn2t = torch.jit.trace(*args)(lstm_raw_no_premul)
     y, hy, cy = traced_fn2t(input, hidden[0][0], hidden[1][0],
                             w_ih, w_hh, b_ih, b_hh, transpose)
+    inputs = [input, hidden[0][0], hidden[1][0], w_ih, w_hh, b_ih, b_hh, transpose]
     # args = [input, hidden[0][0], hidden[1][0], w_ih, w_hh, b_ih, b_hh]
     # graph = traced_fn2t.graph_for(*args)
     return y, (hy, cy)
@@ -356,6 +388,10 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     trace_result = lstm_trace(x, (hx, cx), *lstm.all_weights[0])
     check_output(trace_result, expected)
 
+    print("Test lstm jit basic...")
+    basic_result = lstm_basic(x, (hx, cx), *lstm.all_weights[0])
+    check_output(basic_result, expected)
+
     print("Test lstm trace (no premul, pret)...")
     trace_np_result = lstm_trace_no_premul_pret(x, (hx, cx), *lstm.all_weights[0])
     check_output(trace_np_result, expected)
@@ -389,6 +425,9 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     def lstmc():
         result = lstm(x, (hx, cx))
         return result
+
+    def lstmb():
+        return lstm_basic(x, (hx, cx), *lstm.all_weights[0])
 
     def lstmp():
         torch.backends.cudnn.enabled = False
@@ -450,20 +489,24 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         return "%4.4f" % (sum(timings) / len(timings))
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
-    print(benchmark(lstmp, nloops=1, warmup=1))
-    time.sleep(1)
+    # print(benchmark(lstmp, nloops=1, warmup=1))
+    # time.sleep(1)
     # print(benchmark(lstmn, nloops=1, warmup=0))
     # print(benchmark(lambda: lstmf2(1), nloops=1, warmup=0))
     # print(benchmark(lstmf, nloops=1, warmup=3))
+    print(benchmark(lstmb, nloops=1, warmup=2))
+    time.sleep(1)
+    print(benchmark(lstmn, nloops=1, warmup=2))
+    return
     # print(benchmark(lstmj, nloops=1, warmup=1))
     # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
-    print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
+    # print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
     # print(prof)
     # import pdb; pdb.set_trace()
     # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmf2, nloops=1, warmup=3))
-    return
+    # return
 
     outs = [
         benchmark(lstmp),
@@ -473,13 +516,14 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         benchmark(lstmn),
         # benchmark(lstmo),
         benchmark(lstmc),
+        benchmark(lstmb),
         # benchmark(lambda: lstmk(0)),
         # benchmark(lambda: lstmk(1 | 4)),
         # benchmark(lstmkl),
         # benchmark(lambda: lstmk(31)),
         benchmark(lstmj),
         benchmark(lstmt),
-        benchmark(lambda: lstmtnp(False)),
+        # benchmark(lambda: lstmtnp(False)),
         benchmark(lambda: lstmtnp(True)),
         # benchmark(lstma, nloops=50),
     ]
