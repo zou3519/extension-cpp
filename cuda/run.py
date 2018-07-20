@@ -425,7 +425,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             return lstm_trace_no_premul_pret(x, (hx, cx), *lstm.all_weights[0])
         return lstm_trace_no_premul(x, (hx, cx), *lstm.all_weights[0])
 
-    def benchmark(fn, nloops=200, warmup=10):
+    def benchmark(fn, nloops=600, warmup=10):
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         timings = []
@@ -450,11 +450,12 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         return "%4.4f" % (sum(timings) / len(timings))
 
     # print(benchmark(lambda: lstmk(1 | 4), nloops=1, warmup=0))
-    # print(benchmark(lstmp, nloops=1, warmup=10))
-    print(benchmark(lstmn, nloops=1, warmup=0))
-    print(benchmark(lambda: lstmf2(1), nloops=1, warmup=0))
+    print(benchmark(lstmp, nloops=1, warmup=1))
+    time.sleep(1)
+    # print(benchmark(lstmn, nloops=1, warmup=0))
+    # print(benchmark(lambda: lstmf2(1), nloops=1, warmup=0))
     # print(benchmark(lstmf, nloops=1, warmup=3))
-    # print(benchmark(lstmj, nloops=1, warmup=0))
+    print(benchmark(lstmj, nloops=1, warmup=1))
     # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
     # print(benchmark(lambda: lstmtnp(True), nloops=1, warmup=2))
@@ -466,8 +467,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
     outs = [
         benchmark(lstmp),
-        benchmark(lstmf),
-        benchmark(lstmf2),
+        # benchmark(lstmf),
+        # benchmark(lstmf2),
         benchmark(lambda: lstmf2(1)),
         benchmark(lstmn),
         # benchmark(lstmo),
@@ -476,8 +477,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         # benchmark(lambda: lstmk(1 | 4)),
         # benchmark(lstmkl),
         # benchmark(lambda: lstmk(31)),
-        # benchmark(lstmj),
-        # benchmark(lstmt),
+        benchmark(lstmj),
+        benchmark(lstmt),
         # benchmark(lambda: lstmtnp(False)),
         # benchmark(lambda: lstmtnp(True)),
         # benchmark(lstma, nloops=50),

@@ -77,6 +77,85 @@ def milstm(x, hx, cx, w_ih, w_hh, alpha, beta_i, beta_h, bias):
         output.append(hy)
     return torch.stack(output), (hy, cy)
 
+def milstm2(x, hx, cx, w_ih, w_hh, alpha, beta_i, beta_h, bias):
+    output = []
+    hy = hx
+    cy = cx
+    for j in range(x.size(0)):
+        # assume 0 + 1 layers
+        hy, cy = milstm_raw(x[j], hy, cy, w_ih, w_hh,
+                            alpha, beta_i, beta_h, bias)
+        output.append(hy)
+    return torch.stack(output), hy, cy
+
+traced_fn = None
+
+def milstm_trace(input, hidden, w_ih, w_hh, b_ih, b_hh, alpha, beta_i, beta_h):
+    global traced_fn
+    if traced_fn is None:
+        traced_fn = torch.jit.trace(input, hidden[0][0], hidden[1][0], w_ih,
+                                    w_hh, alpha, beta_i,
+                                    beta_h, b_ih + b_hh)(milstm2)
+    y, hy, cy = traced_fn(input, hidden[0][0], hidden[1][0],
+                          w_ih, w_hh, alpha, beta_i,
+                          beta_h, b_ih + b_hh)
+    return y, (hy, cy)
+
+
+block_fn = None
+
+
+def milstm_block_unit(input, hx, cx, w_ih, w_hh, b_ih, b_hh,
+                      alpha, beta_i, beta_h):
+    global block_fn
+    # block_fn = milstm2
+    if block_fn is None:
+        block_fn = torch.jit.trace(input, hx, cx, w_ih,
+                                   w_hh, alpha, beta_i,
+                                   beta_h, b_ih + b_hh)(milstm2)
+    y, hy, cy = block_fn(input, hx, cx,
+                         w_ih, w_hh, alpha, beta_i,
+                         beta_h, b_ih + b_hh)
+    y2,hy2,cy2 = milstm2(input, hx, cx,
+                         w_ih, w_hh, alpha, beta_i,
+                         beta_h, b_ih + b_hh)
+    if (y - y2).norm() > 0.01:
+        barf()
+    if (hy - hy2).norm() > 0.01:
+        barf()
+    if (cy - cy2).norm() > 0.01:
+        barf()
+    return y, hy, cy
+
+
+def milstm_blocked_trace(input, hidden, w_ih, w_hh,
+                         b_ih, b_hh, alpha, beta1, beta2,
+                         block_size=100):
+    seq_len, batch_size, input_size = input.size()
+    output = []
+
+    hy = hidden[0][0]
+    cy = hidden[1][0]
+
+    for i in range(0, input.size(0), block_size):
+        if i + block_size <= input.size(0):
+            o, hy, cy = milstm_block_unit(input.narrow(0, i, block_size),
+                                          hy, cy, w_ih, w_hh,
+                                          b_ih, b_hh, alpha,
+                                          beta1, beta2)
+            output.append(o)
+        else:
+            # a block doesn't fit the remaining sequence, so just
+            # use the unblocked version for the end
+            for ii in range(i, min(i + block_size, input.size(0))):
+                hy, cy = milstm_cell(input[ii], hy, cy, w_hh, b_ih, b_hh,
+                                     alpha, beta1, beta2)
+                output.append(hy)
+
+    # to see details about the trace, unncomment:
+    # print(lstm_cell.jit_debug_info())
+    return torch.cat(output, dim=0), (hy, cy)
+
 
 # run one step of an lstm, assuming premultiplied input
 @torch.jit.script
@@ -160,6 +239,8 @@ def check_output(result, expected):
     r0, (r1, r2) = result
     e0, (e1, e2) = expected
     for r, e in [(r0, e0), (r1, e1), (r2, e2)]:
+        r = r.detach()
+        e = e.detach()
         if (r - e).norm() > 0.001:
             barf()
 
@@ -195,6 +276,17 @@ def test(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     jit_result = milstm_jit(x, (hx, cx), *lstm.all_weights[0], *extras)
     check_output(jit_result, expected)
 
+    # print("Test milstm (trace)...")
+    # full_trace_result = milstm_trace(x, (hx, cx),
+    #                                  *lstm.all_weights[0], *extras)
+    # check_output(full_trace_result, expected)
+
+    print("Test milstm (block trace)...")
+    block_result = milstm_blocked_trace(x, (hx, cx),
+                                        *lstm.all_weights[0],
+                                        *extras)
+    check_output(block_result, expected)
+
     print("Test milstm (script + block trace)...")
     trace_result = milstm_jit(x, (hx, cx), *lstm.all_weights[0],
                               *extras, trace=True)
@@ -226,6 +318,10 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
                             *extras, trace=trace)
         return result
 
+    def milstmt():
+        return milstm_blocked_trace(x, (hx, cx), *lstm.all_weights[0],
+                                    *extras)
+
     def milstmr():
         result = milstm(x, hx, cx, wih, whh, *extras, bih + bhh)
         return result
@@ -255,8 +351,12 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     benchmark(lambda: milstmk(31))
     print("milstm (jit)")
     benchmark(milstmj)
-    print("milstm (jit blocks)")
-    benchmark(lambda: milstmj(trace=True), nloops=20)
+    print("milstm (blocked trace)")
+    benchmark(milstmt)
+    # print("milstm (full trace)")
+    # benchmark(milstmt)
+    # print("milstm (jit blocks)")
+    # benchmark(lambda: milstmj(trace=True), nloops=20)
 
 
 inputs = dict(seqLength=100,
