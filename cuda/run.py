@@ -472,7 +472,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             return lstm_trace_no_premul_pret(x, (hx, cx), *lstm.all_weights[0])
         return lstm_trace_no_premul(x, (hx, cx), *lstm.all_weights[0])
 
-    def benchmark(fn, nloops=200, warmup=10):
+    def benchmark(fn, nloops=200, warmup=20):
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         timings = []
@@ -509,9 +509,10 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     time.sleep(1)
     print(benchmark(lambda: lstmn(1), nloops=1, warmup=2))
     time.sleep(1)
-    print(benchmark(lstmb, nloops=1, warmup=2))
-    time.sleep(1)
-    return
+    print(benchmark(lambda: lstmn(2), nloops=1, warmup=2))
+    # print(benchmark(lstmb, nloops=1, warmup=2))
+    # time.sleep(1)
+    # return
     # print(benchmark(lstmj, nloops=1, warmup=1))
     # print(benchmark(lstmt, nloops=1, warmup=2))
     # with torch.autograd.profiler.profile(use_cuda=True) as prof:
@@ -520,7 +521,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # import pdb; pdb.set_trace()
     # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmf2, nloops=1, warmup=3))
-    # return
+    return
 
     outs = [
         benchmark(lstmp),
@@ -529,6 +530,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         benchmark(lambda: lstmf2(1)),
         benchmark(lstmn),
         benchmark(lambda: lstmn(1)),
+        benchmark(lambda: lstmn(2)),
         # benchmark(lstmo),
         benchmark(lstmc),
         benchmark(lstmb),
@@ -542,6 +544,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         # benchmark(lambda: lstmtnp(True)),
         # benchmark(lstma, nloops=50),
     ]
+
     print(', '.join(outs))
 
     # print("lstm (autograd)")
