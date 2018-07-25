@@ -505,12 +505,13 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmb, nloops=1, warmup=2))
     # time.sleep(1)
-    print(benchmark(lstmn, nloops=1, warmup=2))
+    print(benchmark(lstmn, nloops=1, warmup=3))
     time.sleep(1)
-    print(benchmark(lambda: lstmn(1), nloops=1, warmup=2))
+    print(benchmark(lambda: lstmn(1), nloops=1, warmup=3))
     time.sleep(1)
-    print(benchmark(lambda: lstmn(2), nloops=1, warmup=2))
-    # print(benchmark(lstmb, nloops=1, warmup=2))
+    print(benchmark(lambda: lstmn(3), nloops=1, warmup=3))
+    return
+    #print(benchmark(lstmb, nloops=1, warmup=2))
     # time.sleep(1)
     # return
     # print(benchmark(lstmj, nloops=1, warmup=1))
@@ -530,7 +531,7 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
         benchmark(lambda: lstmf2(1)),
         benchmark(lstmn),
         benchmark(lambda: lstmn(1)),
-        benchmark(lambda: lstmn(2)),
+        benchmark(lambda: lstmn(3)),
         # benchmark(lstmo),
         benchmark(lstmc),
         benchmark(lstmb),
