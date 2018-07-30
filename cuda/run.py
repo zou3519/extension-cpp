@@ -1,12 +1,9 @@
 import torch
-import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import functional as F
 import time
 from torch.nn._functions.rnn import fusedBackend
-
-import lltm_cuda
 
 i = torch.randn(1).cuda()
 torch.manual_seed(42)
@@ -107,8 +104,6 @@ def lstm_fused(input, hx, cx, w_ih, w_hh, b_ih, b_hh):
     batch_size = input.size(1)
     igates = torch.empty(seq_len, batch_size, 4 * hidden_size, device='cuda')
     hgates = torch.empty(seq_len, batch_size, 4 * hidden_size, device='cuda')
-    # igates = torch.empty(seq_len, 4 * hidden_size, batch_size,  device='cuda').transpose(1, 2)
-    # hgates = torch.empty(seq_len, 4 * hidden_size, batch_size, device='cuda').transpose(1, 2).transpose(1, 2).transpose(1, 2).transpose(1, 2)
 
     for i in range(seq_len):
         hy, cy = lstm_fused_cell(input[i], hy, cy, w_ih_t, w_hh_t,
