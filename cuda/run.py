@@ -416,6 +416,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # cx.requires_grad_()
 
     lstm = torch.nn.LSTM(hiddenSize, hiddenSize, numLayers).cuda()
+    for weight in lstm.all_weights[0]:
+        weight.requires_grad_(False)
     w, b = flatten_weights(lstm.all_weights)
 
     def lstmk(perfopts=1 | 2 | 4 | 8 | 16):
@@ -475,12 +477,13 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
             fn()
             torch.cuda.synchronize()
 
-        # with torch.autograd.profiler.profile(use_cuda=False) as prof:
-        #     fn()
-        #     torch.cuda.synchronize()
-        # print(prof)
-        # import pdb; pdb.set_trace()
-        # return "0"
+        import pdb; pdb.set_trace()
+        with torch.autograd.profiler.profile(use_cuda=False) as prof:
+            fn()
+            torch.cuda.synchronize()
+        print(prof)
+        import pdb; pdb.set_trace()
+        return "0"
 
         for i in range(nloops):
             start_event.record()
@@ -500,12 +503,12 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmb, nloops=1, warmup=2))
     # time.sleep(1)
-    print(benchmark(lstmn, nloops=1, warmup=3))
-    time.sleep(1)
+    # print(benchmark(lstmn, nloops=1, warmup=3))
+    # time.sleep(1)
     print(benchmark(lambda: lstmn(1), nloops=1, warmup=3))
-    time.sleep(1)
-    print(benchmark(lambda: lstmn(3), nloops=1, warmup=3))
     return
+    # time.sleep(1)
+    # print(benchmark(lambda: lstmn(3), nloops=1, warmup=3))
     #print(benchmark(lstmb, nloops=1, warmup=2))
     # time.sleep(1)
     # return
@@ -517,7 +520,6 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
     # import pdb; pdb.set_trace()
     # print(benchmark(lstmf, nloops=1, warmup=3))
     # print(benchmark(lstmf2, nloops=1, warmup=3))
-    return
 
     outs = [
         benchmark(lstmp),
