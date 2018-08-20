@@ -96,8 +96,8 @@ def benchmark(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64):
 
         return helper
 
-    def benchmark(fn, nloops=1, warmup=1):
-        time.sleep(1)
+    def benchmark(fn, nloops=100, warmup=10):
+        # time.sleep(1)
         timings = []
         lambd = wrap_fn(fn)
         for i in range(warmup):
