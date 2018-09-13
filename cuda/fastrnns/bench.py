@@ -2,11 +2,17 @@ from collections import namedtuple
 import torch
 import gc
 
-from .factory import *
+from .factory import pytorch_lstm_creator, script_lstm_creator
+from .factory import script_lstm_flat_inputs_creator
 
 
 BenchResult = namedtuple('BenchResult', [
     'name', 'avg_fwd', 'std_fwd', 'avg_bwd', 'std_bwd',
+])
+
+
+RNNRunner = namedtuple('RNNRunner', [
+    'name', 'creator', 'context',
 ])
 
 
@@ -23,18 +29,18 @@ def to_str(item):
     return str(item)
 
 
-def print_header(colwidth=8):
+def print_header(colwidth=8, sep=' '):
     items = []
     for item in BenchResult._fields:
         items.append(fit_str(item))
-    return '  '.join(items)
+    return sep.join(items)
 
 
-def pretty_print(benchresult, colwidth=8):
+def pretty_print(benchresult, colwidth=8, sep=' '):
     items = []
     for thing in benchresult:
         items.append(fit_str(to_str(thing)))
-    return '  '.join(items)
+    return sep.join(items)
 
 
 def trainbench(name, rnn_creator, nloops=100, warmup=10,
@@ -107,41 +113,60 @@ class DummyContext():
         pass
 
 
-def bench(**params):
-    to_bench = [
-        ('cudnn', pytorch_lstm_creator, None),
-        ('aten', pytorch_lstm_creator, DisableCuDNN),
-        ('jit_flat', script_lstm_flat_inputs_creator, None),
-        ('jit', script_lstm_creator, None),
-    ]
+class AssertNoJIT():
+    def __enter__(self):
+        import os
+        enabled = os.environ.get('PYTORCH_JIT', 1)
+        assert not enabled
 
-    print(print_header())
-    for name, creator, context in to_bench:
+    def __exit__(self, *args, **kwargs):
+        pass
+
+
+def bench(rnn_runners, sep=' ', **params):
+    print(print_header(sep=sep))
+    for name, creator, context in rnn_runners:
         if context is None:
             context = DummyContext
         with context():
             result = trainbench(name, creator, **params)
-            print(pretty_print(result))
+            print(pretty_print(result, sep=sep))
 
 
-def bench_single_layer():
+def bench_single_layer(rnn_runners, sep=' '):
     print('Benchmarking single layer lstm...')
     params = dict(nloops=200,
                   seqLength=100, numLayers=1, inputSize=512, hiddenSize=512,
                   miniBatch=64, device='cuda', seed=None)
-    bench(**params)
+    bench(rnn_runners, sep=sep, **params)
     print('')
 
 
-def bench_multi_layer():
+def bench_multi_layer(rnn_runners, sep=' '):
     print('Benchmarking multi layer lstm...')
     params = dict(nloops=200,
                   seqLength=100, numLayers=4, inputSize=512, hiddenSize=512,
                   miniBatch=64, device='cuda', seed=None)
-    bench(**params)
+    bench(rnn_runners, sep=sep, **params)
     print('')
 
 
+def get_rnn_runners(*names):
+    return [rnn_runners[name] for name in names]
+
+
+rnn_runners = {
+    'cudnn': RNNRunner('cudnn', pytorch_lstm_creator, None),
+    'aten': RNNRunner('aten', pytorch_lstm_creator, DisableCuDNN),
+    'jit_flat': RNNRunner('jit_flat', script_lstm_flat_inputs_creator, None),
+    'jit': RNNRunner('jit', script_lstm_creator, None),
+    'py': RNNRunner('py', script_lstm_creator, AssertNoJIT),
+    'pyflat': RNNRunner('pyflat', script_lstm_flat_inputs_creator, AssertNoJIT),
+}
+
+
 if __name__ == '__main__':
-    bench_single_layer()
-    bench_multi_layer()
+    rnn_runners = get_rnn_runners('cudnn', 'aten', 'jit_flat', 'jit')
+
+    bench_single_layer(rnn_runners)
+    bench_multi_layer(rnn_runners)
