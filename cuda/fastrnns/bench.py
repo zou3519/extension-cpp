@@ -10,11 +10,11 @@ BenchResult = namedtuple('BenchResult', [
 ])
 
 
-def fit_str(colwidth=8):
-    if len(str) < colwidth:
-        return (colwidth - len(str)) * ' ' + str
+def fit_str(string, colwidth=8):
+    if len(string) < colwidth:
+        return (colwidth - len(string)) * ' ' + string
     else:
-        return str[:colwidth]
+        return string[:colwidth]
 
 
 def to_str(item):
@@ -25,19 +25,19 @@ def to_str(item):
 
 def print_header(colwidth=8):
     items = []
-    for item in BenchResult._fields():
+    for item in BenchResult._fields:
         items.append(fit_str(item))
-    return ''.join(items)
+    return '  '.join(items)
 
 
 def pretty_print(benchresult, colwidth=8):
     items = []
-    for thing in BenchResult:
+    for thing in benchresult:
         items.append(fit_str(to_str(thing)))
-    return ''.join(items)
+    return '  '.join(items)
 
 
-def trainbench(name, rnn_creator, nloops=100,
+def trainbench(name, rnn_creator, nloops=100, warmup=10,
                seqLength=100, numLayers=1, inputSize=512, hiddenSize=512,
                miniBatch=64, device='cuda', seed=None):
     def train_batch(rnn, inputs, params):
@@ -50,7 +50,7 @@ def trainbench(name, rnn_creator, nloops=100,
         gc.collect()
 
         fwd_start_event.record()
-        output, hiddens = rnn(inputs)
+        output, hiddens = rnn(*inputs)
         fwd_end_event.record()
 
         grads = torch.rand_like(output)
@@ -75,6 +75,8 @@ def trainbench(name, rnn_creator, nloops=100,
                         miniBatch=miniBatch, device=device, seed=seed)
     rnn, inputs, params = rnn_creator(**creator_args)
 
+    [train_batch(rnn, inputs, params) for _ in range(warmup)]
+
     results = [train_batch(rnn, inputs, params) for _ in range(nloops)]
     fwd_times, bwd_times = zip(*results)
 
@@ -82,8 +84,10 @@ def trainbench(name, rnn_creator, nloops=100,
     bwd_times = torch.tensor(bwd_times)
 
     return BenchResult(name=name,
-                       avg_fwd=fwd_times.mean(), std_fwd=fwd_times.std(),
-                       avg_bwd=bwd_times.mean(), std_bwd=bwd_times.std())
+                       avg_fwd=fwd_times.mean().item(),
+                       std_fwd=fwd_times.std().item(),
+                       avg_bwd=bwd_times.mean().item(),
+                       std_bwd=bwd_times.std().item())
 
 
 class DisableCuDNN():
@@ -103,11 +107,7 @@ class DummyContext():
         pass
 
 
-if __name__ == '__main__':
-    params = dict(nloops=100,
-                  seqLength=100, numLayers=1, inputSize=512, hiddenSize=512,
-                  miniBatch=64, device='cuda', seed=None)
-
+def bench(**params):
     to_bench = [
         ('cudnn', pytorch_lstm_creator, None),
         ('aten', pytorch_lstm_creator, DisableCuDNN),
@@ -115,10 +115,33 @@ if __name__ == '__main__':
         ('jit', script_lstm_creator, None),
     ]
 
-    print_header()
+    print(print_header())
     for name, creator, context in to_bench:
         if context is None:
             context = DummyContext
         with context():
             result = trainbench(name, creator, **params)
-            pretty_print(result)
+            print(pretty_print(result))
+
+
+def bench_single_layer():
+    print('Benchmarking single layer lstm...')
+    params = dict(nloops=200,
+                  seqLength=100, numLayers=1, inputSize=512, hiddenSize=512,
+                  miniBatch=64, device='cuda', seed=None)
+    bench(**params)
+    print('')
+
+
+def bench_multi_layer():
+    print('Benchmarking multi layer lstm...')
+    params = dict(nloops=200,
+                  seqLength=100, numLayers=4, inputSize=512, hiddenSize=512,
+                  miniBatch=64, device='cuda', seed=None)
+    bench(**params)
+    print('')
+
+
+if __name__ == '__main__':
+    bench_single_layer()
+    bench_multi_layer()

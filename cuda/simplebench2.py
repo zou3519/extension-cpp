@@ -233,7 +233,7 @@ sizes = dict(seqLength=100, numLayers=1, hiddenSize=512, miniBatch=64,
              nloops=100, warmup=10, sleep_between=0)
 sizeb = dict(seqLength=10, numLayers=1, hiddenSize=512, miniBatch=64,
              nloops=5, warmup=1, sleep_between=1)
-benchmark(**sizeb)
+benchmark(**sizes)
 
 now_allocated = torch.cuda.memory_allocated()
 if allocated < now_allocated:
