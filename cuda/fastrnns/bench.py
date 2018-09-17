@@ -2,17 +2,11 @@ from collections import namedtuple
 import torch
 import gc
 
-from .factory import pytorch_lstm_creator, script_lstm_creator
-from .factory import script_lstm_flat_inputs_creator
+from .runner import get_rnn_runners
 
 
 BenchResult = namedtuple('BenchResult', [
     'name', 'avg_fwd', 'std_fwd', 'avg_bwd', 'std_bwd',
-])
-
-
-RNNRunner = namedtuple('RNNRunner', [
-    'name', 'creator', 'context',
 ])
 
 
@@ -96,38 +90,9 @@ def trainbench(name, rnn_creator, nloops=100, warmup=10,
                        std_bwd=bwd_times.std().item())
 
 
-class DisableCuDNN():
-    def __enter__(self):
-        self.saved = torch.backends.cudnn.enabled
-        torch.backends.cudnn.enabled = False
-
-    def __exit__(self, *args, **kwargs):
-        torch.backends.cudnn.enabled = self.saved
-
-
-class DummyContext():
-    def __enter__(self):
-        pass
-
-    def __exit__(self, *args, **kwargs):
-        pass
-
-
-class AssertNoJIT():
-    def __enter__(self):
-        import os
-        enabled = os.environ.get('PYTORCH_JIT', 1)
-        assert not enabled
-
-    def __exit__(self, *args, **kwargs):
-        pass
-
-
 def bench(rnn_runners, sep=' ', **params):
     print(print_header(sep=sep))
     for name, creator, context in rnn_runners:
-        if context is None:
-            context = DummyContext
         with context():
             result = trainbench(name, creator, **params)
             print(pretty_print(result, sep=sep))
@@ -149,20 +114,6 @@ def bench_multi_layer(rnn_runners, sep=' '):
                   miniBatch=64, device='cuda', seed=None)
     bench(rnn_runners, sep=sep, **params)
     print('')
-
-
-def get_rnn_runners(*names):
-    return [rnn_runners[name] for name in names]
-
-
-rnn_runners = {
-    'cudnn': RNNRunner('cudnn', pytorch_lstm_creator, None),
-    'aten': RNNRunner('aten', pytorch_lstm_creator, DisableCuDNN),
-    'jit_flat': RNNRunner('jit_flat', script_lstm_flat_inputs_creator, None),
-    'jit': RNNRunner('jit', script_lstm_creator, None),
-    'py': RNNRunner('py', script_lstm_creator, AssertNoJIT),
-    'pyflat': RNNRunner('pyflat', script_lstm_flat_inputs_creator, AssertNoJIT),
-}
 
 
 if __name__ == '__main__':
